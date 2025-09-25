@@ -9,29 +9,33 @@
 #define WRITE_END 1
 #define MAXMSGLENGTH 500
 
-/*
 
+volatile sig_atomic_t end = 1;
+
+void sigint_handler(int sig) {
+    end = 0;
+    exit(0);
+}
+
+
+/*
 CIS 452 01
 Kenan Velagic
 Joshua Johnson
 Project One - One Bad Apple
-
 */
 
 int main() {
+    signal(SIGINT, sigint_handler);
     char input[500];
     pid_t pid;
     int numProcesses;
 
     /*
     .
-    .
-    .
       Prompt user to enter the number of nodes for the
       circular ring. Store the value in var 'k', which will
       later be used to create that many processes and pipes.
-    .
-    .
     .
     */
 
@@ -41,16 +45,12 @@ int main() {
 
     /*
     .
-    .
-    .
       After getting the number of nodes k, we create k pipes.
       Each pipe will connect one node to the next.
        - pipes[i][0] is the read end of pipe i
        - pipes[i][1] is the write end of pipe i
       These pipes allow each child process (node) to receive a message
       from the previous, and send it to the next node in the ring.
-    .
-    .
     .
     */
 
@@ -66,7 +66,7 @@ int main() {
         }
     }
 
-    int nodeId = 0;
+    int nodeID = 0;
 
     for (int i = 1; i < numProcesses; i++) {
         pid = fork();
@@ -79,19 +79,39 @@ int main() {
             break;
         }
     }
-    int next = (nodeID + 1) % numProcesses
+    int next = (nodeID + 1) % numProcesses;
     int readFd = pipes[nodeID][READ_END];  // read from predecessor
     int writeFd = pipes[next][WRITE_END];    // write to next
-
+    int msgSize = strlen(input);
     // close all other pipes
     for (int j = 0; j < numProcesses; ++j) {
         if (j != nodeID) close(pipes[j][0]);
-        if (j != (nodeID + 1) % numProcesses) close(pipes[j][1]);
+        if (j != next) close(pipes[j][1]);
     }
     
-
+    if (nodeID == 0) {
+        write(writeFd, input, msgSize);
+    }
+    
     // ring loop
-    while (1) {
+    while (1 || end) {
+        char buffer[msgSize];
+        size_t readStatus = read(readFd, buffer, sizeof(buffer));
+        if (readStatus <= 0) break;
+        
+        printf("Node %d received: %s\n", nodeID, buffer);
+        
+        if (nodeID == 0) break;
+        
+        write(writeFd, buffer, readStatus);
+    }
+
+    // shutdown process
+    close(readFd);
+    close(writeFd);
+    
+    if (nodeID == 0) {
+        for (int i = 1; i < numProcesses; ++i) wait(NULL);
     }
     return 0;
 }
